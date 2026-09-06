@@ -22,6 +22,49 @@ import fleet_engine
 PLUGIN_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+def get_configured_terminal():
+    cfg_path = os.path.join(PLUGIN_DIR, "config.json")
+    if os.path.isfile(cfg_path):
+        try:
+            with open(cfg_path, "r") as f:
+                t = json.load(f).get("terminal_cmd")
+                if t and shutil.which(t):
+                    return t
+        except Exception:
+            pass
+    return None
+
+
+def launch_in_terminal(cmd_str):
+    """
+    Launches a command in the user's terminal.
+    If using omarchy-launch-floating-terminal-with-presentation, delegates to it directly
+    (it displays the Omarchy logo, runs the command, and presents omarchy-show-done).
+    Otherwise, wraps in bash with a keypress prompt to prevent the terminal from closing immediately.
+    """
+    term_launcher = get_configured_terminal()
+    if term_launcher == "omarchy-launch-floating-terminal-with-presentation" or (not term_launcher and shutil.which("omarchy-launch-floating-terminal-with-presentation")):
+        cmd = ["omarchy-launch-floating-terminal-with-presentation", cmd_str]
+        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return
+
+    script = f"{cmd_str}; echo ''; read -r -p 'Press Enter to exit...'"
+    if term_launcher and term_launcher != "xdg-terminal-exec":
+        terms = [term_launcher]
+    elif shutil.which("xdg-terminal-exec"):
+        cmd = ["xdg-terminal-exec", "bash", "-c", script]
+        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return
+    else:
+        terms = ["ghostty", "foot", "alacritty", "kitty", "xterm"]
+
+    for term in terms:
+        if shutil.which(term):
+            cmd = [term, "-e", "bash", "-c", script]
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return
+
+
 def main():
     if len(sys.argv) < 2 or sys.argv[1] == "status":
         force = "--force" in sys.argv
@@ -164,83 +207,18 @@ def main():
             is_demo = os.path.exists(fleet_engine.DEMO_FLAG_FILE)
         triage_bin = os.path.join(PLUGIN_DIR, "bin", "fleet-triage")
         triage_cmd = f"python3 {shlex.quote(triage_bin)}" + (" --demo" if is_demo else " --live")
-        
-        term_launcher = None
-        cfg_path = os.path.join(PLUGIN_DIR, "config.json")
-        if os.path.isfile(cfg_path):
-            try:
-                with open(cfg_path, "r") as f:
-                    t = json.load(f).get("terminal_cmd")
-                    if t and shutil.which(t):
-                        term_launcher = t
-            except Exception:
-                pass
-
-        if term_launcher == "omarchy-launch-floating-terminal-with-presentation" or (not term_launcher and shutil.which("omarchy-launch-floating-terminal-with-presentation")):
-            cmd = ["omarchy-launch-floating-terminal-with-presentation", "bash", "-c", f"{triage_cmd}; echo ''; read -p 'Press Enter to exit...'"]
-            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        elif shutil.which("xdg-terminal-exec"):
-            cmd = ["xdg-terminal-exec", "-e", "bash", "-c", f"{triage_cmd}; echo ''; read -p 'Press Enter to exit...'"]
-            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        else:
-            for term in ["ghostty", "foot", "alacritty", "kitty", "xterm"]:
-                if shutil.which(term):
-                    cmd = [term, "-e", "bash", "-c", f"{triage_cmd}; echo ''; read -p 'Press Enter to exit...'"]
-                    subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    break
+        launch_in_terminal(triage_cmd)
+        print(json.dumps({"status": "ok", "action": "open-triage"}))
 
     elif sys.argv[1] == "run-fix" and len(sys.argv) > 2:
         fix_cmd = sys.argv[2]
-        term_launcher = None
-        cfg_path = os.path.join(PLUGIN_DIR, "config.json")
-        if os.path.isfile(cfg_path):
-            try:
-                with open(cfg_path, "r") as f:
-                    t = json.load(f).get("terminal_cmd")
-                    if t and shutil.which(t):
-                        term_launcher = t
-            except Exception:
-                pass
-
-        if term_launcher == "omarchy-launch-floating-terminal-with-presentation" or (not term_launcher and shutil.which("omarchy-launch-floating-terminal-with-presentation")):
-            cmd = ["omarchy-launch-floating-terminal-with-presentation", "bash", "-c", 'eval "$1"; echo ""; read -p "Press Enter to exit..."', "--", fix_cmd]
-            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        elif shutil.which("xdg-terminal-exec"):
-            cmd = ["xdg-terminal-exec", "-e", "bash", "-c", 'eval "$1"; echo ""; read -p "Press Enter to exit..."', "--", fix_cmd]
-            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        else:
-            for term in ["ghostty", "foot", "alacritty", "kitty", "xterm"]:
-                if shutil.which(term):
-                    cmd = [term, "-e", "bash", "-c", 'eval "$1"; echo ""; read -p "Press Enter to exit..."', "--", fix_cmd]
-                    subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    break
+        launch_in_terminal(fix_cmd)
         print(json.dumps({"status": "ok", "action": "run-fix", "command": fix_cmd}))
 
     elif sys.argv[1] == "open-setup":
         setup_bin = os.path.join(PLUGIN_DIR, "bin", "fleet-setup")
-        term_launcher = None
-        cfg_path = os.path.join(PLUGIN_DIR, "config.json")
-        if os.path.isfile(cfg_path):
-            try:
-                with open(cfg_path, "r") as f:
-                    t = json.load(f).get("terminal_cmd")
-                    if t and shutil.which(t):
-                        term_launcher = t
-            except Exception:
-                pass
-
-        if term_launcher == "omarchy-launch-floating-terminal-with-presentation" or (not term_launcher and shutil.which("omarchy-launch-floating-terminal-with-presentation")):
-            cmd = ["omarchy-launch-floating-terminal-with-presentation", "python3", setup_bin]
-            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        elif shutil.which("xdg-terminal-exec"):
-            cmd = ["xdg-terminal-exec", "-e", "python3", setup_bin]
-            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        else:
-            for term in ["ghostty", "foot", "alacritty", "kitty", "xterm"]:
-                if shutil.which(term):
-                    cmd = [term, "-e", "python3", setup_bin]
-                    subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    break
+        setup_cmd = f"python3 {shlex.quote(setup_bin)}"
+        launch_in_terminal(setup_cmd)
         print(json.dumps({"status": "ok", "action": "open-setup"}))
 
     elif sys.argv[1] == "copy" and len(sys.argv) > 2:
