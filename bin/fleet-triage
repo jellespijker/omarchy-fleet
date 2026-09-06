@@ -1,0 +1,235 @@
+#!/usr/bin/env python3
+"""
+fleet-triage
+Automated CVE Scanner & Triage Decision Engine for FleetDM & osquery.
+Analyzes detected vulnerabilities across fleet hosts, cross-references with CISA KEV,
+evaluates real-world exploitability, links to NIST NVD, and outputs actionable remediation.
+"""
+
+import os
+import shutil
+import sys
+
+# Ensure local bin directory is on sys.path
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+
+import fleet_engine
+
+# ANSI Color Codes
+RESET = "\033[0m"
+BOLD = "\033[1m"
+DIM = "\033[2m"
+RED = "\033[31m"
+GREEN = "\033[32m"
+YELLOW = "\033[33m"
+BLUE = "\033[34m"
+MAGENTA = "\033[35m"
+CYAN = "\033[36m"
+WHITE = "\033[37m"
+BG_RED = "\033[41m"
+BG_YELLOW = "\033[43m"
+
+
+def term_link(url: str, text: str = "") -> str:
+    """Generates an OSC 8 terminal hyperlink."""
+    label = text or url
+    return f"\033]8;;{url}\033\\{label}\033]8;;\033\\"
+
+
+def main():
+    if "-h" in sys.argv or "--help" in sys.argv:
+        print("""Usage: fleet-triage [options]
+
+Options:
+  --demo            Run triage in synthetic demonstration mode
+  --live            Force querying live FleetDM instance
+  --json            Output raw JSON triage payload
+  --force           Bypass cache and force fresh queries
+  --mute <target>   Mute alerts for a package name or CVE ID
+  --unmute <target> Unmute alerts for a package name or CVE ID
+  --list-muted      Display all currently muted packages and CVEs
+  -h, --help        Show this help message and exit
+""")
+        return
+
+    # Handle mute CLI commands
+    if "--mute" in sys.argv:
+        idx = sys.argv.index("--mute")
+        if idx + 1 < len(sys.argv):
+            target = sys.argv[idx + 1]
+            reason = "Muted via CLI fleet-triage"
+            if target.upper().startswith("CVE-"):
+                fleet_engine.mute_cve(target.upper(), reason)
+            else:
+                fleet_engine.mute_package(target, reason)
+            print(f"{GREEN}✓ Successfully muted alerts for: {BOLD}{target}{RESET}")
+            return
+        else:
+            print(f"{RED}Error: --mute requires a package name or CVE ID{RESET}")
+            sys.exit(1)
+
+    if "--unmute" in sys.argv:
+        idx = sys.argv.index("--unmute")
+        if idx + 1 < len(sys.argv):
+            target = sys.argv[idx + 1]
+            if target.upper().startswith("CVE-"):
+                ok = fleet_engine.unmute_cve(target.upper())
+            else:
+                ok = fleet_engine.unmute_package(target)
+            if ok:
+                print(f"{GREEN}✓ Successfully unmuted: {BOLD}{target}{RESET}")
+            else:
+                print(f"{YELLOW}Item {target} was not in muted list.{RESET}")
+            return
+        else:
+            print(f"{RED}Error: --unmute requires a package name or CVE ID{RESET}")
+            sys.exit(1)
+
+    if "--list-muted" in sys.argv:
+        ignored = fleet_engine.load_ignored()
+        pkgs = ignored.get("packages", {})
+        cves = ignored.get("cves", {})
+        print(f"{BOLD}{WHITE}Currently Muted Vulnerabilities:{RESET}")
+        if not pkgs and not cves:
+            print(f"  {DIM}No packages or CVEs are currently muted.{RESET}")
+        for p, info in pkgs.items():
+            print(f"  {CYAN}Package:{RESET} {BOLD}{p}{RESET} ({info.get('muted_at', 'unknown date')}) - {info.get('reason', '')}")
+        for c, info in cves.items():
+            print(f"  {CYAN}CVE:{RESET} {BOLD}{c}{RESET} ({info.get('muted_at', 'unknown date')}) - {info.get('reason', '')}")
+        return
+
+    force = "--force" in sys.argv
+    if "--demo" in sys.argv:
+        use_demo = True
+    elif "--live" in sys.argv:
+        use_demo = False
+    else:
+        use_demo = os.path.exists(fleet_engine.DEMO_FLAG_FILE)
+
+    if "--json" in sys.argv:
+        import json
+        if use_demo:
+            data = fleet_engine.get_demo_data()
+        else:
+            data = fleet_engine.triage_all(force_refresh=force, use_demo=False)
+        print(json.dumps(data, indent=2))
+        return
+
+    term_width = min(shutil.get_terminal_size((80, 24)).columns, 90)
+    divider = "─" * term_width
+    term_eq = "═" * term_width
+
+    print(f"{BOLD}{CYAN}{term_eq}{RESET}")
+    mode_tag = f" {MAGENTA}[DEMO MODE]{RESET}" if use_demo else ""
+    print(f"{BOLD}{WHITE}  󰓠 FLEETDM VULNERABILITY TRIAGE REPORT{mode_tag}{RESET}")
+    print(f"{BOLD}{CYAN}{term_eq}{RESET}\n")
+
+    if use_demo:
+        print(f"{YELLOW}Loading demonstration fleet scenario...{RESET}")
+        triage_data = fleet_engine.get_demo_data()
+    else:
+        print(f"{CYAN}1. Fetching enrolled hosts and status...{RESET}", end="", flush=True)
+        host_map = fleet_engine.fetch_hosts()
+        online_count = sum(1 for h in host_map.values() if h.get("online"))
+        offline_count = len(host_map) - online_count
+        status_str = f"{len(host_map)} hosts enrolled ({online_count} online"
+        if offline_count > 0:
+            status_str += f", {offline_count} offline"
+        status_str += ")"
+        print(f" {GREEN}✓ {status_str}{RESET}")
+
+        print(f"{CYAN}2. Fetching vulnerability telemetry from Fleet...{RESET}", end="", flush=True)
+        software = fleet_engine.fetch_vulnerable_software()
+        print(f" {GREEN}✓ {len(software)} software titles with detected CVEs{RESET}")
+
+        print(f"{CYAN}3. Cross-referencing CISA KEV catalog & checking mute list...{RESET}", end="", flush=True)
+        kev_dict = fleet_engine.get_cisa_kev(force_refresh=force)
+        print(f" {GREEN}✓ {len(kev_dict)} known exploited zero-days tracked{RESET}\n")
+
+        triage_data = fleet_engine.triage_all(force_refresh=force)
+
+    t1_items = triage_data.get("tier1_packages", [])
+    t2_items = triage_data.get("tier2_packages", [])
+    t3_count = triage_data.get("tier3_count", 0)
+    t4_count = triage_data.get("tier4_count", 0)
+    muted_items = triage_data.get("muted_items", [])
+
+    print(f"{BOLD}{WHITE}TRIAGE POSTURE SUMMARY{RESET}")
+    print(f"{divider}")
+    t1_color = RED if t1_items else GREEN
+    print(f"  {t1_color}● TIER 1: CRITICAL CISA KEV      : {len(t1_items):>3} packages{RESET}")
+    print(f"  {YELLOW}● TIER 2: ACTION RECOMMENDED     : {triage_data.get('tier2_count', 0):>3} packages{RESET}")
+    print(f"  {CYAN}● TIER 3: LOW / LOCAL ONLY       : {t3_count:>3} packages{RESET}")
+    print(f"  {MAGENTA}● TIER 4: LIKELY FALSE POSITIVES : {t4_count:>3} packages{RESET}")
+    if muted_items:
+        print(f"  {DIM}󰂛 MUTED / SNOOZED BY USER        : {len(muted_items):>3} packages{RESET}")
+    print(f"{divider}\n")
+
+    # Tier 1 Action List
+    if t1_items:
+        print(f"{BG_RED}{WHITE}{BOLD} >>> TIER 1: CRITICAL ZERO-DAYS DETECTED ({len(t1_items)} packages) <<<{RESET}")
+        for s in t1_items:
+            name = s.get("name")
+            ver = s.get("version")
+            src = s.get("source")
+            reason = s.get("reason")
+            nvd_url = s.get("nvd_url")
+            chips = s.get("host_chips", [])
+            print(f"\n  {RED}{BOLD}✖ {name} {ver}{RESET} ({src})")
+            print(f"    {BOLD}CISA KEV Alert:{RESET} {reason}")
+            if nvd_url:
+                print(f"    {BOLD}NVD Advisory  :{RESET} {CYAN}{term_link(nvd_url)}{RESET}")
+            for h in chips:
+                h_name = h.get("name")
+                h_online = h.get("online", True)
+                h_status = f"{GREEN}[online]{RESET}" if h_online else f"{YELLOW}[offline]{RESET}"
+                print(f"    {CYAN}Host: {h_name}{RESET} {h_status} -> {GREEN}{h.get('action', '')}{RESET}")
+        print()
+
+    # Tier 2 Action List
+    if t2_items:
+        print(f"{BOLD}{YELLOW}>>> TIER 2: ACTION RECOMMENDED (Top Priority Packages){RESET}")
+        for s in t2_items[:10]:
+            name = s.get("name")
+            ver = s.get("version")
+            src = s.get("source")
+            vulns = s.get("cves", [])
+            reason = s.get("reason")
+            nvd_url = s.get("nvd_url")
+            chips = s.get("host_chips", [])
+            cve_str = ", ".join(vulns[:3])
+            if s.get("cve_count", len(vulns)) > 3:
+                cve_str += f" (+{s.get('cve_count') - 3} more)"
+            
+            host_names = ", ".join([f"{h.get('name', '')}" for h in chips]) if chips else f"{s.get('hosts', 1)} hosts"
+            print(f"\n  {YELLOW}▶ {BOLD}{name} {ver}{RESET} [{src}] - {CYAN}{host_names}{RESET}")
+            print(f"    {WHITE}CVEs    :{RESET} {cve_str}")
+            print(f"    {WHITE}Reason  :{RESET} {reason}")
+            if nvd_url:
+                print(f"    {WHITE}NVD Link:{RESET} {CYAN}{term_link(nvd_url)}{RESET}")
+            if chips:
+                for h in chips[:3]:
+                    h_online = h.get("online", True)
+                    h_status = f"{GREEN}●{RESET}" if h_online else f"{YELLOW}○ (offline){RESET}"
+                    print(f"    {BOLD}Fix ({h.get('name', '')}):{RESET} {GREEN}{h.get('action', '')}{RESET} {h_status}")
+            else:
+                rem_cmd = s.get("action")
+                print(f"    {BOLD}Fix:{RESET} {GREEN}{rem_cmd}{RESET}")
+
+    # Muted section
+    if muted_items:
+        print(f"\n{DIM}>>> MUTED PACKAGES ({len(muted_items)} ignored){RESET}")
+        for m in muted_items:
+            m_reason = m.get("muted_reason", "Muted by user")
+            print(f"  {DIM}󰂛 {m.get('name', '')} {m.get('version', '')} - {m_reason} [To restore: fleet-triage --unmute {m.get('name', '')}]{RESET}")
+
+    print(f"\n{BOLD}{CYAN}{term_eq}{RESET}")
+    print(f"  {WHITE}Tip: Mute false positives with: fleet-triage --mute <package>{RESET}")
+    print(f"  {WHITE}     Click NVD links to inspect CVE details and CVSS attack vectors.{RESET}")
+    print(f"{BOLD}{CYAN}{term_eq}{RESET}\n")
+
+
+if __name__ == "__main__":
+    main()

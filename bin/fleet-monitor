@@ -1,0 +1,263 @@
+#!/usr/bin/env python3
+"""
+fleet-monitor
+Omarchy helper daemon and IPC handler for FleetDM security monitor.
+Supplies structured JSON telemetry for Quickshell QML widget.
+"""
+
+import json
+import os
+import shlex
+import shutil
+import subprocess
+import sys
+
+# Ensure local bin directory is on sys.path
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+
+import fleet_engine
+
+PLUGIN_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def main():
+    if len(sys.argv) < 2 or sys.argv[1] == "status":
+        force = "--force" in sys.argv
+        if "--demo" in sys.argv:
+            use_demo = True
+        elif "--live" in sys.argv:
+            use_demo = False
+        else:
+            use_demo = None
+        try:
+            status = fleet_engine.triage_all(force_refresh=force, use_demo=use_demo)
+            print(json.dumps(status))
+        except Exception as e:
+            err_payload = {
+                "status": "error",
+                "error_message": f"Scan failed: {str(e)}",
+                "is_demo": False,
+                "hosts_total": 0,
+                "hosts_online": 0,
+                "hosts_offline": 0,
+                "vulnerable_software_count": 0,
+                "total_cves": 0,
+                "cisa_kev_active": 0,
+                "tier1_count": 0,
+                "tier2_count": 0,
+                "tier3_count": 0,
+                "tier4_count": 0,
+                "muted_count": 0,
+                "muted_packages": [],
+                "muted_items": [],
+                "actionable_count": 0,
+                "last_scan_time": "",
+                "fleet_url": f"{fleet_engine.get_configured_fleet_url().rstrip('/')}/software?vulnerable=true",
+                "tier1_packages": [],
+                "tier2_packages": [],
+                "actionable_packages": []
+            }
+            print(json.dumps(err_payload))
+
+    elif sys.argv[1] == "demo":
+        sub = sys.argv[2] if len(sys.argv) > 2 else "toggle"
+        flag = fleet_engine.DEMO_FLAG_FILE
+        cache = fleet_engine.FLEET_CACHE_FILE
+        if sub in ("on", "enable"):
+            try:
+                open(flag, "w").close()
+            except Exception:
+                pass
+            if os.path.exists(cache):
+                try:
+                    os.remove(cache)
+                except Exception:
+                    pass
+            status = fleet_engine.triage_all(force_refresh=True, use_demo=True)
+            print(json.dumps(status))
+        elif sub in ("off", "disable"):
+            if os.path.exists(flag):
+                try:
+                    os.remove(flag)
+                except Exception:
+                    pass
+            if os.path.exists(cache):
+                try:
+                    os.remove(cache)
+                except Exception:
+                    pass
+            status = fleet_engine.triage_all(force_refresh=True, use_demo=False)
+            print(json.dumps(status))
+        elif sub == "toggle":
+            if os.path.exists(flag):
+                try:
+                    os.remove(flag)
+                except Exception:
+                    pass
+                if os.path.exists(cache):
+                    try:
+                        os.remove(cache)
+                    except Exception:
+                        pass
+                status = fleet_engine.triage_all(force_refresh=True, use_demo=False)
+            else:
+                try:
+                    open(flag, "w").close()
+                except Exception:
+                    pass
+                if os.path.exists(cache):
+                    try:
+                        os.remove(cache)
+                    except Exception:
+                        pass
+                status = fleet_engine.triage_all(force_refresh=True, use_demo=True)
+            print(json.dumps(status))
+        elif sub == "status":
+            print(json.dumps({"status": "ok", "demo": os.path.exists(flag)}))
+        else:
+            demo_data = fleet_engine.get_demo_data()
+            print(json.dumps(demo_data))
+
+    elif sys.argv[1] == "mute" and len(sys.argv) > 2:
+        target = sys.argv[2]
+        reason = sys.argv[3] if len(sys.argv) > 3 else "Muted via Omarchy Fleet panel"
+        if target.upper().startswith("CVE-"):
+            ok = fleet_engine.mute_cve(target.upper(), reason)
+        else:
+            ok = fleet_engine.mute_package(target, reason)
+        print(json.dumps({"status": "ok" if ok else "error", "action": "mute", "target": target}))
+
+    elif sys.argv[1] == "unmute" and len(sys.argv) > 2:
+        target = sys.argv[2]
+        if target.upper().startswith("CVE-"):
+            ok = fleet_engine.unmute_cve(target.upper())
+        else:
+            ok = fleet_engine.unmute_package(target)
+        print(json.dumps({"status": "ok" if ok else "error", "action": "unmute", "target": target}))
+
+    elif sys.argv[1] == "list-muted":
+        ignored = fleet_engine.load_ignored()
+        print(json.dumps(ignored))
+
+    elif sys.argv[1] == "open-nvd" and len(sys.argv) > 2:
+        target = sys.argv[2]
+        if target.startswith("http://") or target.startswith("https://"):
+            url = target
+        else:
+            cve_id = target if target.upper().startswith("CVE-") else f"CVE-{target}"
+            url = f"https://nvd.nist.gov/vuln/detail/{cve_id}"
+        subprocess.run(["xdg-open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print(json.dumps({"status": "ok", "opened": url}))
+
+    elif sys.argv[1] == "open-ui":
+        url = f"{fleet_engine.get_configured_fleet_url().rstrip('/')}/software?vulnerable=true"
+        subprocess.run(["xdg-open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    elif sys.argv[1] == "open-triage":
+        if "--demo" in sys.argv:
+            is_demo = True
+        elif "--live" in sys.argv:
+            is_demo = False
+        else:
+            is_demo = os.path.exists(fleet_engine.DEMO_FLAG_FILE)
+        triage_bin = os.path.join(PLUGIN_DIR, "bin", "fleet-triage")
+        triage_cmd = f"python3 {shlex.quote(triage_bin)}" + (" --demo" if is_demo else " --live")
+        
+        term_launcher = None
+        cfg_path = os.path.join(PLUGIN_DIR, "config.json")
+        if os.path.isfile(cfg_path):
+            try:
+                with open(cfg_path, "r") as f:
+                    t = json.load(f).get("terminal_cmd")
+                    if t and shutil.which(t):
+                        term_launcher = t
+            except Exception:
+                pass
+
+        if term_launcher == "omarchy-launch-floating-terminal-with-presentation" or (not term_launcher and shutil.which("omarchy-launch-floating-terminal-with-presentation")):
+            cmd = ["omarchy-launch-floating-terminal-with-presentation", "bash", "-c", f"{triage_cmd}; echo ''; read -p 'Press Enter to exit...'"]
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        elif shutil.which("xdg-terminal-exec"):
+            cmd = ["xdg-terminal-exec", "-e", "bash", "-c", f"{triage_cmd}; echo ''; read -p 'Press Enter to exit...'"]
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            for term in ["ghostty", "foot", "alacritty", "kitty", "xterm"]:
+                if shutil.which(term):
+                    cmd = [term, "-e", "bash", "-c", f"{triage_cmd}; echo ''; read -p 'Press Enter to exit...'"]
+                    subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    break
+
+    elif sys.argv[1] == "run-fix" and len(sys.argv) > 2:
+        fix_cmd = sys.argv[2]
+        term_launcher = None
+        cfg_path = os.path.join(PLUGIN_DIR, "config.json")
+        if os.path.isfile(cfg_path):
+            try:
+                with open(cfg_path, "r") as f:
+                    t = json.load(f).get("terminal_cmd")
+                    if t and shutil.which(t):
+                        term_launcher = t
+            except Exception:
+                pass
+
+        if term_launcher == "omarchy-launch-floating-terminal-with-presentation" or (not term_launcher and shutil.which("omarchy-launch-floating-terminal-with-presentation")):
+            cmd = ["omarchy-launch-floating-terminal-with-presentation", "bash", "-c", 'eval "$1"; echo ""; read -p "Press Enter to exit..."', "--", fix_cmd]
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        elif shutil.which("xdg-terminal-exec"):
+            cmd = ["xdg-terminal-exec", "-e", "bash", "-c", 'eval "$1"; echo ""; read -p "Press Enter to exit..."', "--", fix_cmd]
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            for term in ["ghostty", "foot", "alacritty", "kitty", "xterm"]:
+                if shutil.which(term):
+                    cmd = [term, "-e", "bash", "-c", 'eval "$1"; echo ""; read -p "Press Enter to exit..."', "--", fix_cmd]
+                    subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    break
+        print(json.dumps({"status": "ok", "action": "run-fix", "command": fix_cmd}))
+
+    elif sys.argv[1] == "open-setup":
+        setup_bin = os.path.join(PLUGIN_DIR, "bin", "fleet-setup")
+        term_launcher = None
+        cfg_path = os.path.join(PLUGIN_DIR, "config.json")
+        if os.path.isfile(cfg_path):
+            try:
+                with open(cfg_path, "r") as f:
+                    t = json.load(f).get("terminal_cmd")
+                    if t and shutil.which(t):
+                        term_launcher = t
+            except Exception:
+                pass
+
+        if term_launcher == "omarchy-launch-floating-terminal-with-presentation" or (not term_launcher and shutil.which("omarchy-launch-floating-terminal-with-presentation")):
+            cmd = ["omarchy-launch-floating-terminal-with-presentation", "python3", setup_bin]
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        elif shutil.which("xdg-terminal-exec"):
+            cmd = ["xdg-terminal-exec", "-e", "python3", setup_bin]
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            for term in ["ghostty", "foot", "alacritty", "kitty", "xterm"]:
+                if shutil.which(term):
+                    cmd = [term, "-e", "python3", setup_bin]
+                    subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    break
+        print(json.dumps({"status": "ok", "action": "open-setup"}))
+
+    elif sys.argv[1] == "copy" and len(sys.argv) > 2:
+        cmd_text = sys.argv[2]
+        try:
+            subprocess.run(["wl-copy", cmd_text], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            try:
+                proc = subprocess.Popen(["wl-copy"], stdin=subprocess.PIPE)
+                proc.communicate(input=cmd_text.encode())
+            except Exception:
+                pass
+        print(f"Copied: {cmd_text}")
+
+    else:
+        print("Usage: fleet-monitor [status [--force] [--demo]|demo|mute <pkg>|unmute <pkg>|list-muted|open-nvd <cve>|open-ui|open-triage|open-setup|run-fix <cmd>|copy <cmd>]")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "id": "jellespijker.fleet",
+  "name": "Fleet Security",
+  "version": "1.0.0",
+  "author": "Jelle Spijker",
+  "license": "MIT",
+  "homepage": "https://github.com/jellespijker/omarchy-fleet",
+  "description": "Real-time FleetDM vulnerability scanner, CISA KEV alerts, and host security triage monitor",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Fleet Security",
+    "description": "FleetDM vulnerability monitor, CISA KEV alerts, and host patch triage",
+    "category": "Security",
+    "aliases": ["fleet", "cve", "vulnerabilities", "security", "osquery", "patch"],
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "refreshIntervalSec": 60,
+      "autoCloseOnCopy": false
+    },
+    "schema": [
+      {
+        "key": "refreshIntervalSec",
+        "type": "integer",
+        "label": "Poll interval (seconds)",
+        "min": 15,
+        "max": 600,
+        "step": 15,
+        "defaultValue": 60
+      },
+      {
+        "key": "autoCloseOnCopy",
+        "type": "boolean",
+        "label": "Auto-close panel after copying fix",
+        "defaultValue": false
+      }
+    ]
+  }
+}

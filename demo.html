@@ -1,0 +1,977 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Omarchy Fleet Security — Interactive Demo</title>
+  <style>
+    :root {
+      --bg-base: #1e1e2e;
+      --bg-mantle: #181825;
+      --bg-crust: #11111b;
+      --bg-surface0: #313244;
+      --bg-surface1: #45475a;
+      --text: #cdd6f4;
+      --subtext: #a6adc8;
+      --dim: #6c7086;
+      --urgent: #f38ba8;
+      --urgent-bg: rgba(243, 139, 168, 0.15);
+      --accent: #fab387;
+      --accent-bg: rgba(250, 179, 135, 0.15);
+      --safe: #a6e3a1;
+      --safe-bg: rgba(166, 227, 161, 0.15);
+      --blue: #89b4fa;
+      --border: rgba(205, 214, 244, 0.1);
+      --border-urgent: rgba(243, 139, 168, 0.35);
+      --radius-sm: 4px;
+      --radius-md: 6px;
+      --radius-lg: 10px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: #0c0e14;
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "JetBrains Mono", sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    /* Top Bar Simulation */
+    .top-bar {
+      height: 32px;
+      background: rgba(17, 17, 27, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      font-size: 11px;
+      z-index: 100;
+      position: sticky;
+      top: 0;
+    }
+    .bar-left, .bar-center, .bar-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .workspace-pill {
+      background: var(--bg-surface0);
+      padding: 2px 8px;
+      border-radius: var(--radius-sm);
+      font-weight: 600;
+    }
+    .bar-title {
+      color: var(--subtext);
+      font-weight: 500;
+    }
+    .fleet-bar-icon {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--urgent-bg);
+      border: 1px solid var(--border-urgent);
+      color: var(--urgent);
+      padding: 2px 8px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-weight: 700;
+      transition: all 0.15s ease;
+    }
+    .fleet-bar-icon:hover {
+      background: rgba(243, 139, 168, 0.25);
+    }
+    .badge-dot {
+      width: 7px;
+      height: 7px;
+      background: var(--urgent);
+      border-radius: 50%;
+      box-shadow: 0 0 6px var(--urgent);
+    }
+
+    /* Main Showcase Container */
+    .main-content {
+      flex: 1;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 30px 20px;
+      position: relative;
+    }
+
+    /* Popout Panel */
+    .fleet-panel {
+      width: 490px;
+      background: var(--bg-base);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.05);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease;
+    }
+
+    /* Header Hero */
+    .panel-hero {
+      background: var(--bg-mantle);
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .hero-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .hero-icon-box {
+      width: 36px;
+      height: 36px;
+      border-radius: var(--radius-md);
+      background: var(--urgent-bg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--urgent);
+      font-size: 20px;
+    }
+    .hero-texts h2 {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: -0.2px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .hero-meta {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--urgent);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-top: 2px;
+    }
+    .hero-detail {
+      font-size: 11px;
+      color: var(--dim);
+      font-weight: 500;
+    }
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn-header {
+      background: var(--bg-surface0);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 4px 8px;
+      border-radius: var(--radius-sm);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.15s ease;
+    }
+    .btn-header:hover {
+      background: var(--bg-surface1);
+    }
+    .btn-header.active {
+      background: var(--accent-bg);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    /* Stat Pills */
+    .stat-pills {
+      display: flex;
+      gap: 8px;
+      padding: 12px 18px;
+      background: var(--bg-crust);
+      border-bottom: 1px solid var(--border);
+    }
+    .pill {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border-radius: var(--radius-sm);
+      font-size: 11px;
+      font-weight: 700;
+      border: 1px solid transparent;
+      cursor: pointer;
+      user-select: none;
+      transition: transform 0.1s ease;
+    }
+    .pill:active { transform: scale(0.97); }
+    .pill-urgent {
+      background: var(--urgent-bg);
+      color: var(--urgent);
+      border-color: var(--border-urgent);
+    }
+    .pill-accent {
+      background: var(--accent-bg);
+      color: var(--accent);
+      border-color: rgba(250, 179, 135, 0.3);
+    }
+    .pill-neutral {
+      background: var(--bg-surface0);
+      color: var(--subtext);
+      border-color: var(--border);
+    }
+    .pill-muted {
+      background: rgba(108, 112, 134, 0.15);
+      color: var(--dim);
+      border-color: rgba(108, 112, 134, 0.3);
+    }
+    .pill-muted.has-items {
+      color: var(--subtext);
+    }
+
+    /* List Container */
+    .list-section-header {
+      padding: 10px 18px 4px 18px;
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--dim);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .package-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 6px 18px 12px 18px;
+      max-height: 420px;
+      overflow-y: auto;
+    }
+
+    /* Package Card */
+    .pkg-card {
+      background: var(--bg-mantle);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      transition: all 0.15s ease;
+    }
+    .pkg-card.tier-1 {
+      border-left: 3px solid var(--urgent);
+    }
+    .pkg-card.tier-2 {
+      border-left: 3px solid var(--accent);
+    }
+    .pkg-card:hover {
+      background: var(--bg-surface0);
+      border-color: var(--subtext);
+    }
+
+    .card-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .card-info {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .pkg-name {
+      font-weight: 700;
+      font-size: 13px;
+      color: #fff;
+    }
+    .pkg-ver {
+      font-size: 11px;
+      color: var(--subtext);
+      font-family: "JetBrains Mono", monospace;
+    }
+    .tier-badge {
+      font-size: 9px;
+      font-weight: 800;
+      padding: 1px 5px;
+      border-radius: 3px;
+      text-transform: uppercase;
+    }
+    .tier-badge.cisa {
+      background: var(--urgent);
+      color: var(--bg-crust);
+    }
+    .tier-badge.action {
+      background: var(--accent);
+      color: var(--bg-crust);
+    }
+
+    /* Host Chips */
+    .host-chips {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+      margin-top: 2px;
+    }
+    .host-chip {
+      font-size: 10px;
+      font-family: "JetBrains Mono", monospace;
+      padding: 1px 6px;
+      border-radius: 3px;
+      background: var(--bg-surface0);
+      color: var(--subtext);
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      border: 1px solid var(--border);
+    }
+    .host-chip.offline {
+      opacity: 0.55;
+      text-decoration: line-through;
+    }
+    .host-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--safe);
+    }
+    .host-chip.offline .host-dot {
+      background: var(--dim);
+    }
+
+    /* Card Actions */
+    .card-actions {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .btn-action {
+      background: var(--bg-surface0);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 3px 7px;
+      border-radius: var(--radius-sm);
+      font-size: 10px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.12s ease;
+      text-decoration: none;
+    }
+    .btn-action:hover {
+      background: var(--bg-surface1);
+      border-color: var(--subtext);
+    }
+    .btn-nvd {
+      color: var(--blue);
+      border-color: rgba(137, 180, 250, 0.3);
+    }
+    .btn-nvd:hover {
+      background: rgba(137, 180, 250, 0.15);
+    }
+    .btn-copy {
+      color: var(--text);
+    }
+    .btn-copy.copied {
+      background: var(--safe-bg);
+      color: var(--safe);
+      border-color: var(--safe);
+    }
+    .btn-run {
+      color: var(--accent);
+      border-color: rgba(250, 179, 135, 0.3);
+    }
+    .btn-run:hover {
+      background: rgba(250, 179, 135, 0.15);
+    }
+    .btn-mute {
+      color: var(--dim);
+    }
+    .btn-mute:hover {
+      color: var(--urgent);
+    }
+
+    .card-bottom {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 11px;
+      color: var(--subtext);
+      border-top: 1px solid rgba(255, 255, 255, 0.04);
+      padding-top: 5px;
+    }
+    .card-cve-pill {
+      font-size: 10px;
+      font-family: "JetBrains Mono", monospace;
+      font-weight: 600;
+      color: var(--blue);
+      background: rgba(137, 180, 250, 0.1);
+      border: 1px solid rgba(137, 180, 250, 0.25);
+      padding: 1px 5px;
+      border-radius: 3px;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .card-cve-pill:hover {
+      background: rgba(137, 180, 250, 0.25);
+    }
+
+    /* Muted Drawer */
+    .muted-drawer {
+      margin: 0 18px 12px 18px;
+      border: 1px dashed var(--dim);
+      border-radius: var(--radius-md);
+      background: var(--bg-crust);
+      padding: 8px 12px;
+      display: none;
+    }
+    .muted-drawer.open {
+      display: block;
+    }
+    .muted-drawer-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--dim);
+      margin-bottom: 6px;
+    }
+    .muted-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--bg-mantle);
+      border: 1px solid var(--border);
+      padding: 5px 8px;
+      border-radius: var(--radius-sm);
+      font-size: 11px;
+      margin-top: 4px;
+    }
+
+    /* Footer Action Row */
+    .panel-footer {
+      background: var(--bg-crust);
+      border-top: 1px solid var(--border);
+      padding: 12px 18px;
+      display: flex;
+      gap: 10px;
+    }
+    .btn-footer {
+      flex: 1;
+      background: var(--bg-surface0);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 8px;
+      border-radius: var(--radius-md);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+    .btn-footer:hover {
+      background: var(--bg-surface1);
+      border-color: var(--subtext);
+    }
+
+    /* Floating Terminal Simulation */
+    .terminal-modal {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(0.95);
+      width: 720px;
+      background: #11111b;
+      border: 1px solid #45475a;
+      border-radius: var(--radius-lg);
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.8);
+      z-index: 1000;
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      font-family: "JetBrains Mono", monospace;
+    }
+    .terminal-modal.open {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translate(-50%, -50%) scale(1);
+    }
+    .term-titlebar {
+      background: #181825;
+      padding: 8px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid #313244;
+      font-size: 11px;
+      color: var(--subtext);
+    }
+    .term-dots {
+      display: flex;
+      gap: 6px;
+    }
+    .term-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .term-body {
+      padding: 16px;
+      font-size: 12px;
+      line-height: 1.5;
+      color: #cdd6f4;
+      max-height: 480px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+
+    /* Toast Notification */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--bg-mantle);
+      border: 1px solid var(--safe);
+      color: var(--safe);
+      padding: 10px 16px;
+      border-radius: var(--radius-md);
+      font-size: 12px;
+      font-weight: 600;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+      transform: translateY(100px);
+      opacity: 0;
+      transition: all 0.2s ease;
+      z-index: 2000;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .toast.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Bar Simulation -->
+  <header class="top-bar">
+    <div class="bar-left">
+      <div class="workspace-pill">1</div>
+      <span class="bar-title">arch • hyprland • omarchy</span>
+    </div>
+    <div class="bar-center">
+      <span style="color: var(--dim);">Sunday 14:15 • Fleet Security Widget</span>
+    </div>
+    <div class="bar-right">
+      <div class="fleet-bar-icon" id="togglePanelBtn" title="Click to toggle Fleet Security Panel">
+        <span class="badge-dot"></span>
+        <span>󰅚 3 CISA KEV</span>
+      </div>
+      <span style="color: var(--dim);">󰤨 100%</span>
+      <span style="color: var(--dim);">󰁹 98%</span>
+    </div>
+  </header>
+
+  <!-- Main Content Showcase -->
+  <main class="main-content">
+    <div class="fleet-panel" id="fleetPanel">
+      
+      <!-- 1. Header Hero -->
+      <div class="panel-hero">
+        <div class="hero-left">
+          <div class="hero-icon-box" id="heroIconBox">
+            <span id="heroIcon">󰅚</span>
+          </div>
+          <div class="hero-texts">
+            <h2 id="heroTitle">Fleet Security</h2>
+            <div class="hero-meta" id="heroMeta">3 CRITICAL CISA KEV EXPLOITS</div>
+            <div class="hero-detail" id="heroDetail">4/5 Online (1 off)</div>
+          </div>
+        </div>
+        <div class="hero-actions">
+          <button class="btn-header" id="demoToggleBtn">󰈗 Live</button>
+          <button class="btn-header" id="refreshBtn" title="Refresh Telemetry">󰑐</button>
+        </div>
+      </div>
+
+      <!-- 2. Stat Pills Row -->
+      <div class="stat-pills">
+        <div class="pill pill-urgent" id="pillKev" title="Critical CISA Known Exploited Vulnerabilities">
+          <span>󰅚</span> <span id="statKev">3 CISA KEV</span>
+        </div>
+        <div class="pill pill-accent" id="pillPatch" title="Actionable packages requiring update">
+          <span>󰏗</span> <span id="statPatch">18 To Patch</span>
+        </div>
+        <div class="pill pill-neutral" id="pillCve" title="Total raw CVEs across fleet">
+          <span>󰌹</span> <span id="statCve">2986 CVEs</span>
+        </div>
+        <div class="pill pill-muted" id="pillMuted" title="Click to toggle muted drawer">
+          <span>󰂛</span> <span id="statMuted">1 Muted</span>
+        </div>
+      </div>
+
+      <!-- 3. Actionable Package List -->
+      <div class="list-section-header">
+        <span>Actionable Packages (<span id="actionableCountHeader">4</span>)</span>
+        <span style="font-weight: normal; color: var(--dim);">Scanned 14:15:20</span>
+      </div>
+
+      <div class="package-list" id="packageList">
+        
+        <!-- Card 1: Samba (CISA KEV) -->
+        <div class="pkg-card tier-1" id="card-samba">
+          <div class="card-top">
+            <div class="card-info">
+              <span class="tier-badge cisa">CISA KEV</span>
+              <span class="pkg-name">samba</span>
+              <span class="pkg-ver">2:4.24.4-1</span>
+            </div>
+            <div class="card-actions">
+              <a href="https://nvd.nist.gov/vuln/detail/CVE-2020-1472" target="_blank" class="btn-action btn-nvd" title="Open CVE-2020-1472 on NIST NVD">󰌹 NVD</a>
+              <button class="btn-action btn-copy" onclick="copyCommand('ssh -t arch-prod &quot;sudo pacman -Syu samba&quot;', this)">󰆏 Copy</button>
+              <button class="btn-action btn-run" onclick="runCommand('ssh -t arch-prod &quot;sudo pacman -Syu samba&quot;')" title="Run in floating terminal">󰐊 Run</button>
+              <button class="btn-action btn-mute" onclick="muteCard('samba', 'card-samba')" title="Mute/ignore this package">󰂛</button>
+            </div>
+          </div>
+          <div class="host-chips">
+            <span class="host-chip"><span class="host-dot"></span>arch-prod</span>
+            <span class="host-chip offline"><span class="host-dot"></span>dev-workstation [off]</span>
+          </div>
+          <div class="card-bottom">
+            <span>39 CVEs • Actively exploited in the wild (Zerologon)</span>
+            <a href="https://nvd.nist.gov/vuln/detail/CVE-2020-1472" target="_blank" class="card-cve-pill">CVE-2020-1472</a>
+          </div>
+        </div>
+
+        <!-- Card 2: Chrome (CISA KEV) -->
+        <div class="pkg-card tier-1" id="card-chrome">
+          <div class="card-top">
+            <div class="card-info">
+              <span class="tier-badge cisa">CISA KEV</span>
+              <span class="pkg-name">google-chrome</span>
+              <span class="pkg-ver">151.0.7922.71-1</span>
+            </div>
+            <div class="card-actions">
+              <a href="https://nvd.nist.gov/vuln/detail/CVE-2026-85046" target="_blank" class="btn-action btn-nvd" title="Open CVE-2026-85046 on NIST NVD">󰌹 NVD</a>
+              <button class="btn-action btn-copy" onclick="copyCommand('ssh -t arch-prod &quot;sudo apt update &amp;&amp; sudo apt install --only-upgrade google-chrome-stable&quot;', this)">󰆏 Copy</button>
+              <button class="btn-action btn-run" onclick="runCommand('ssh -t arch-prod &quot;sudo apt update &amp;&amp; sudo apt install --only-upgrade google-chrome-stable&quot;')" title="Run in floating terminal">󰐊 Run</button>
+              <button class="btn-action btn-mute" onclick="muteCard('google-chrome', 'card-chrome')" title="Mute/ignore this package">󰂛</button>
+            </div>
+          </div>
+          <div class="host-chips">
+            <span class="host-chip"><span class="host-dot"></span>arch-prod</span>
+          </div>
+          <div class="card-bottom">
+            <span>582 CVEs • Actively exploited in the wild (V8 RCE)</span>
+            <a href="https://nvd.nist.gov/vuln/detail/CVE-2026-85046" target="_blank" class="card-cve-pill">CVE-2026-85046</a>
+          </div>
+        </div>
+
+        <!-- Card 3: Curl (Tier 2 Action) -->
+        <div class="pkg-card tier-2" id="card-curl">
+          <div class="card-top">
+            <div class="card-info">
+              <span class="tier-badge action">Action Recommended</span>
+              <span class="pkg-name">curl</span>
+              <span class="pkg-ver">8.5.0-2</span>
+            </div>
+            <div class="card-actions">
+              <a href="https://nvd.nist.gov/vuln/detail/CVE-2023-38545" target="_blank" class="btn-action btn-nvd" title="Open CVE-2023-38545 on NIST NVD">󰌹 NVD</a>
+              <button class="btn-action btn-copy" onclick="copyCommand(&#39;sudo pacman -Syu curl&#39;, this)">󰆏 Copy</button>
+              <button class="btn-action btn-run" onclick="runCommand(&#39;sudo pacman -Syu curl&#39;)" title="Run in floating terminal">󰐊 Run</button>
+              <button class="btn-action btn-mute" onclick="muteCard(&#39;curl&#39;, &#39;card-curl&#39;)" title="Mute/ignore this package">󰂛</button>
+            </div>
+          </div>
+          <div class="host-chips">
+            <span class="host-chip"><span class="host-dot"></span>omarchy</span>
+            <span class="host-chip"><span class="host-dot"></span>arch-prod</span>
+            <span class="host-chip"><span class="host-dot"></span>fedora-srv</span>
+          </div>
+          <div class="card-bottom">
+            <span>12 CVEs • Exposed network runtime / SOCKS5 overflow</span>
+            <a href="https://nvd.nist.gov/vuln/detail/CVE-2023-38545" target="_blank" class="card-cve-pill">CVE-2023-38545</a>
+          </div>
+        </div>
+
+        <!-- Card 4: Aiohttp (Tier 2 Action) -->
+        <div class="pkg-card tier-2" id="card-aiohttp">
+          <div class="card-top">
+            <div class="card-info">
+              <span class="tier-badge action">Action Recommended</span>
+              <span class="pkg-name">aiohttp</span>
+              <span class="pkg-ver">3.9.1</span>
+            </div>
+            <div class="card-actions">
+              <a href="https://nvd.nist.gov/vuln/detail/CVE-2024-23334" target="_blank" class="btn-action btn-nvd" title="Open CVE-2024-23334 on NIST NVD">󰌹 NVD</a>
+              <button class="btn-action btn-copy" onclick="copyCommand(&#39;pip install --upgrade aiohttp&#39;, this)">󰆏 Copy</button>
+              <button class="btn-action btn-run" onclick="runCommand(&#39;pip install --upgrade aiohttp&#39;)" title="Run in floating terminal">󰐊 Run</button>
+              <button class="btn-action btn-mute" onclick="muteCard(&#39;aiohttp&#39;, &#39;card-aiohttp&#39;)" title="Mute/ignore this package">󰂛</button>
+            </div>
+          </div>
+          <div class="host-chips">
+            <span class="host-chip"><span class="host-dot"></span>omarchy</span>
+            <span class="host-chip"><span class="host-dot"></span>windows-runner</span>
+          </div>
+          <div class="card-bottom">
+            <span>7 CVEs • Exposed network runtime / request smuggling</span>
+            <a href="https://nvd.nist.gov/vuln/detail/CVE-2024-23334" target="_blank" class="card-cve-pill">CVE-2024-23334</a>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- 4. Collapsible Muted Drawer -->
+      <div class="muted-drawer" id="mutedDrawer">
+        <div class="muted-drawer-header">
+          <span>󰂛 Muted Packages (<span id="mutedCountLabel">1</span>)</span>
+          <span style="color: var(--dim); font-weight: normal;">Saved in ~/.config/omarchy/fleet_ignored.json</span>
+        </div>
+        <div id="mutedItemsList">
+          <div class="muted-item" id="muted-ffmpeg">
+            <div>
+              <strong>ffmpeg</strong> <span style="color: var(--dim);">(2:7.1-1)</span>
+              <div style="font-size: 10px; color: var(--dim);">Historic Arch Linux epoch mismatch (false positive)</div>
+            </div>
+            <button class="btn-action" onclick="unmuteCard(&#39;ffmpeg&#39;)">󰂚 Unmute</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 5. Footer Action Row -->
+      <div class="panel-footer">
+        <button class="btn-footer" id="btnFleetWeb" onclick="openFleetWeb()">󰌹 Fleet UI</button>
+        <button class="btn-footer" id="btnTerminalTriage" onclick="toggleTerminalModal()">󰓰 Terminal Triage</button>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Floating CLI Terminal Simulation -->
+  <div class="terminal-modal" id="terminalModal">
+    <div class="term-titlebar">
+      <div class="term-dots">
+        <div class="term-dot" style="background: #f38ba8; cursor: pointer;" onclick="toggleTerminalModal()"></div>
+        <div class="term-dot" style="background: #f9e2af;"></div>
+        <div class="term-dot" style="background: #a6e3a1;"></div>
+      </div>
+      <span>fleet-triage • CISA KEV &amp; Vulnerability Matrix</span>
+      <span>bash</span>
+    </div>
+    <div class="term-body" id="termBody"><span style="color: #fab387; font-weight: bold;">========================================================================================</span>
+<span style="color: #fff; font-weight: bold;"> 󰓠 FLEET SECURITY TRIAGE &amp; CISA KEV ADVISORY</span>
+<span style="color: #fab387; font-weight: bold;">========================================================================================</span>
+  <span style="color: #6c7086;">Fleet Instance:</span>  <span style="color: #89b4fa; text-decoration: underline;">https://fleet.example.internal:8080</span>
+  <span style="color: #6c7086;">Monitored Hosts:</span> <span style="color: #a6e3a1; font-weight: bold;">4 Online</span>, <span style="color: #6c7086;">1 Offline</span> (5 total)
+  <span style="color: #6c7086;">Scan Status:</span>     <span style="color: #f38ba8; font-weight: bold;">󰅚 3 CISA KEV Exploits</span> | <span style="color: #fab387; font-weight: bold;">18 To Patch</span> | <span style="color: #cdd6f4;">2986 CVEs</span> | <span style="color: #6c7086;">1 Muted</span>
+
+<span style="color: #f38ba8; font-weight: bold;">󰅚 TIER 1: ACTIVELY EXPLOITED VULNERABILITIES (CISA KEV) [2]</span>
+----------------------------------------------------------------------------------------
+  <span style="color: #f38ba8; font-weight: bold;">●</span> <span style="color: #fff; font-weight: bold;">samba</span> (2:4.24.4-1)  <span style="color: #6c7086;">[2 hosts]</span>  <span style="color: #89b4fa;">󰌹 NVD: https://nvd.nist.gov/vuln/detail/CVE-2020-1472</span>
+    <span style="color: #6c7086;">Reason:</span>  Actively exploited in the wild (CVE-2020-1472)
+    <span style="color: #6c7086;">Fix:</span>     <span style="color: #a6e3a1;">pacman -Syu samba</span>
+    <span style="color: #6c7086;">Hosts:</span>
+      <span style="color: #a6e3a1;">[✓ online ]</span> arch-prod       → <span style="color: #cdd6f4;">ssh arch-prod &quot;pacman -Syu samba&quot;</span>
+      <span style="color: #6c7086;">[✗ offline]</span> dev-workstation → <span style="color: #6c7086;">ssh dev-workstation &quot;pacman -Syu samba&quot;</span>
+
+  <span style="color: #f38ba8; font-weight: bold;">●</span> <span style="color: #fff; font-weight: bold;">google-chrome</span> (151.0.7922.71-1)  <span style="color: #6c7086;">[1 host]</span>  <span style="color: #89b4fa;">󰌹 NVD: https://nvd.nist.gov/vuln/detail/CVE-2026-85046</span>
+    <span style="color: #6c7086;">Reason:</span>  Actively exploited in the wild (CVE-2026-85046)
+    <span style="color: #6c7086;">Fix:</span>     <span style="color: #a6e3a1;">apt update &amp;&amp; apt install --only-upgrade google-chrome-stable</span>
+    <span style="color: #6c7086;">Hosts:</span>
+      <span style="color: #a6e3a1;">[✓ online ]</span> arch-prod       → <span style="color: #cdd6f4;">ssh arch-prod &quot;apt update &amp;&amp; apt install --only-upgrade google-chrome-stable&quot;</span>
+
+<span style="color: #fab387; font-weight: bold;">󰏗 TIER 2: EXPOSED NETWORK RUNTIMES / HIGH SURFACE [2]</span>
+----------------------------------------------------------------------------------------
+  <span style="color: #fab387; font-weight: bold;">●</span> <span style="color: #fff; font-weight: bold;">curl</span> (8.5.0-2)  <span style="color: #6c7086;">[3 hosts]</span>  <span style="color: #89b4fa;">󰌹 NVD: https://nvd.nist.gov/vuln/detail/CVE-2023-38545</span>
+    <span style="color: #6c7086;">Fix:</span>     <span style="color: #a6e3a1;">pacman -Syu curl</span>
+
+  <span style="color: #fab387; font-weight: bold;">●</span> <span style="color: #fff; font-weight: bold;">aiohttp</span> (3.9.1)  <span style="color: #6c7086;">[2 hosts]</span>  <span style="color: #89b4fa;">󰌹 NVD: https://nvd.nist.gov/vuln/detail/CVE-2024-23334</span>
+    <span style="color: #6c7086;">Fix:</span>     <span style="color: #a6e3a1;">pip install --upgrade aiohttp</span>
+
+<span style="color: #6c7086; font-weight: bold;">󰂛 MUTED PACKAGES [1]</span>
+----------------------------------------------------------------------------------------
+  <span style="color: #6c7086;">● ffmpeg (2:7.1-1) — Historic Arch Linux epoch mismatch (false positive)</span>
+</div>
+  </div>
+
+  <!-- Toast Element -->
+  <div class="toast" id="toast">
+    <span>󰄬</span>
+    <span id="toastMsg">Fix copied to clipboard!</span>
+  </div>
+
+  <script>
+    let isDemo = false;
+    let mutedCount = 1;
+    let mutedItems = [
+      { name: "ffmpeg", ver: "2:7.1-1", reason: "Historic Arch Linux epoch mismatch (false positive)" }
+    ];
+
+    // Toggle Panel Open/Close
+    const toggleBtn = document.getElementById("togglePanelBtn");
+    const panel = document.getElementById("fleetPanel");
+    toggleBtn.addEventListener("click", () => {
+      if (panel.style.display === "none") {
+        panel.style.display = "flex";
+      } else {
+        panel.style.display = "none";
+      }
+    });
+
+    // Copy Command Function
+    function copyCommand(cmd, btn) {
+      navigator.clipboard.writeText(cmd).then(() => {
+        showToast("Copied to clipboard: " + cmd);
+        const originalText = btn.innerHTML;
+        btn.innerHTML = "󰄬 Copied!";
+        btn.classList.add("copied");
+        setTimeout(() => {
+          btn.innerHTML = originalText;
+          btn.classList.remove("copied");
+        }, 1500);
+      }).catch(err => {
+        showToast("Copied: " + cmd);
+      });
+    }
+
+    // Run Command Function (Interactive Presentation Terminal Simulation)
+    function runCommand(cmd) {
+      showToast("󰐊 Running in floating terminal: " + cmd);
+    }
+
+    // Toast Notification
+    function showToast(msg) {
+      const toast = document.getElementById("toast");
+      const toastMsg = document.getElementById("toastMsg");
+      toastMsg.innerText = msg;
+      toast.classList.add("show");
+      setTimeout(() => {
+        toast.classList.remove("show");
+      }, 2500);
+    }
+
+    // Mute Card Function
+    function muteCard(pkgName, cardId) {
+      const card = document.getElementById(cardId);
+      if (card) {
+        card.style.opacity = "0";
+        card.style.transform = "translateX(20px)";
+        setTimeout(() => {
+          card.remove();
+          mutedCount++;
+          updateMutedDisplay();
+          addMutedItem(pkgName);
+          showToast("Muted package: " + pkgName + " (saved to fleet_ignored.json)");
+        }, 200);
+      }
+    }
+
+    function addMutedItem(pkgName) {
+      const list = document.getElementById("mutedItemsList");
+      const item = document.createElement("div");
+      item.className = "muted-item";
+      item.id = "muted-" + pkgName;
+      item.innerHTML = `
+        <div>
+          <strong>${pkgName}</strong>
+          <div style="font-size: 10px; color: var(--dim);">Muted via Demo UI</div>
+        </div>
+        <button class="btn-action" onclick="unmuteCard(&#39;${pkgName}&#39;)">󰂚 Unmute</button>
+      `;
+      list.appendChild(item);
+    }
+
+    function unmuteCard(pkgName) {
+      const item = document.getElementById("muted-" + pkgName);
+      if (item) {
+        item.remove();
+        mutedCount = Math.max(0, mutedCount - 1);
+        updateMutedDisplay();
+        showToast("Unmuted package: " + pkgName);
+      }
+    }
+
+    function updateMutedDisplay() {
+      document.getElementById("statMuted").innerText = mutedCount + " Muted";
+      document.getElementById("mutedCountLabel").innerText = mutedCount;
+      const drawer = document.getElementById("mutedDrawer");
+      if (mutedCount === 0) {
+        drawer.classList.remove("open");
+      }
+    }
+
+    // Toggle Muted Drawer
+    document.getElementById("pillMuted").addEventListener("click", () => {
+      const drawer = document.getElementById("mutedDrawer");
+      drawer.classList.toggle("open");
+    });
+
+    // Toggle Live / Demo Mode
+    const demoBtn = document.getElementById("demoToggleBtn");
+    demoBtn.addEventListener("click", () => {
+      isDemo = !isDemo;
+      demoBtn.innerHTML = isDemo ? "󰈈 Demo" : "󰈗 Live";
+      demoBtn.classList.toggle("active", isDemo);
+      document.getElementById("heroTitle").innerText = isDemo ? "Fleet Security (Demo Mode)" : "Fleet Security";
+      document.getElementById("heroMeta").innerText = isDemo ? "SIMULATED MULTI-HOST TELEMETRY" : "3 CRITICAL CISA KEV EXPLOITS";
+      document.getElementById("heroDetail").innerText = isDemo ? "5/6 Hosts Monitored" : "4/5 Online (1 off)";
+      showToast(isDemo ? "Switched to Synthetic Multi-Host Demo Mode" : "Switched to Live FleetDM Telemetry");
+    });
+
+    // Refresh simulation
+    const refreshBtn = document.getElementById("refreshBtn");
+    refreshBtn.addEventListener("click", () => {
+      refreshBtn.style.transform = "rotate(360deg)";
+      refreshBtn.style.transition = "transform 0.5s ease";
+      setTimeout(() => {
+        refreshBtn.style.transform = "none";
+        refreshBtn.style.transition = "none";
+        showToast("Refreshed vulnerability database & host status");
+      }, 500);
+    });
+
+    // Terminal Modal
+    function toggleTerminalModal() {
+      const modal = document.getElementById("terminalModal");
+      modal.classList.toggle("open");
+    }
+
+    function openFleetWeb() {
+      showToast("Redirecting to Fleet Web UI: https://fleet.example.internal:8080/software?vulnerable=true");
+      window.open("https://fleet.example.internal:8080/software?vulnerable=true", "_blank");
+    }
+
+    // Keyboard Shortcuts
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        document.getElementById("terminalModal").classList.remove("open");
+      } else if (e.key === "d" || e.key === "D") {
+        demoBtn.click();
+      } else if (e.key === "r" || e.key === "R") {
+        refreshBtn.click();
+      } else if (e.key === "t" || e.key === "T") {
+        toggleTerminalModal();
+      }
+    });
+  </script>
+</body>
+</html>
