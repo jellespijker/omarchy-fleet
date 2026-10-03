@@ -11,7 +11,7 @@ REQUIRED_FILES=(
   "LICENSE"
   "preview.png"
   "Panel.qml"
-  "install.sh"
+  "tests/check_no_pipe_to_shell.py"
   "demo.html"
   "bin/fleet-monitor"
   "bin/fleet-triage"
@@ -27,13 +27,17 @@ for file in "${REQUIRED_FILES[@]}"; do
   echo "✓ Found $file"
 done
 
-for exe in bin/fleet-monitor bin/fleet-triage bin/fleet-setup install.sh; do
+for exe in bin/fleet-monitor bin/fleet-triage bin/fleet-setup; do
   if [[ ! -x "$ROOT_DIR/$exe" ]]; then
     echo "::error::$exe is not executable"
     exit 1
   fi
   echo "✓ $exe is executable"
 done
+
+echo ""
+echo "=== 1b. Checking for pipe-to-shell / remote-exec patterns ==="
+python3 "$ROOT_DIR/tests/check_no_pipe_to_shell.py"
 
 echo ""
 echo "=== 2. Validating Python Syntax ==="

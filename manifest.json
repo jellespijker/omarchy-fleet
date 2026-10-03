@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "jellespijker.fleet",
   "name": "Fleet Security",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": "Jelle Spijker",
   "license": "MIT",
   "homepage": "https://github.com/jellespijker/omarchy-fleet",

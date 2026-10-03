@@ -36,41 +36,87 @@ A high-performance, native vulnerability triage monitor and **FleetDM / osquery*
 
 ## Installation
 
-### Method 1: Native Omarchy Plugin (Recommended)
-
-Run the following command in your terminal:
+Install, update and remove with the native Omarchy plugin manager. There is no
+installer script and nothing is piped into a shell.
 
 ```bash
+# Install and enable
 omarchy plugin add https://github.com/jellespijker/omarchy-fleet.git --enable
+omarchy restart shell
+
+# Optional: check prerequisites (read-only, installs nothing)
+python3 ~/.config/omarchy/plugins/jellespijker.fleet/bin/fleet-setup --check
+
+# Optional: guided FleetDM connection setup (asks before writing anything)
+python3 ~/.config/omarchy/plugins/jellespijker.fleet/bin/fleet-setup
 ```
 
-Then reload the shell:
+You can also open the setup wizard from the panel ("Connect to FleetDM").
+Review the source first at <https://github.com/jellespijker/omarchy-fleet>.
+To pin an exact revision, clone the repository yourself, `git checkout` a
+reviewed tag or commit, and check it with `omarchy plugin validate .`.
+
+### Update
+
 ```bash
+omarchy plugin update jellespijker.fleet
 omarchy restart shell
 ```
 
----
-
-### Method 2: One-Line Installer Script
+### Remove
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jellespijker/omarchy-fleet/main/install.sh | bash
+omarchy plugin remove jellespijker.fleet
+omarchy restart shell
 ```
 
-The installer verifies your dependencies (`fleetctl`, `python3`, `wl-clipboard`), discovers your FleetDM server address, configures `config.json`, registers the plugin, and symlinks `fleet-triage` to `~/.local/bin/fleet-triage`.
+Removing the plugin deletes the plugin directory (including its `config.json`).
+Data the plugin created elsewhere is kept; delete it yourself if you want it gone:
+
+```bash
+rm -rf ~/.cache/omarchy-fleet                  # status + CISA KEV cache
+rm -f  ~/.config/omarchy/fleet_ignored.json    # muted packages/CVEs
+rm -f  ~/.config/omarchy/fleet_demo_active     # demo-mode flag
+rm -f  ~/.config/omarchy/fleet.json            # only if you created it
+```
+
+`~/.fleet/config` belongs to `fleetctl` (it may hold your Fleet API token); the
+plugin never deletes it. Remove it only if you no longer use `fleetctl`.
 
 ---
 
-### Method 3: Manual Clone
+## What this plugin runs and changes
 
-```bash
-# 1. Clone into your Omarchy plugins directory
-git clone https://github.com/jellespijker/omarchy-fleet.git ~/.config/omarchy/plugins/jellespijker.fleet
+**Network endpoints**
+- Your FleetDM server (the address you configure via `FLEET_URL`, `config.json`
+  or `~/.fleet/config`), reached only through your own `fleetctl` CLI.
+- `https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json`
+  (CISA KEV catalog, fetched by `bin/fleet_engine.py`, cached locally).
+- `https://nvd.nist.gov/vuln/detail/<CVE>` links, only opened in your browser
+  (`xdg-open`) when you click them. The plugin itself does not fetch NVD.
+- Demo mode makes no Fleet requests. The plugin downloads no code and executes
+  no downloaded content.
 
-# 2. Run the interactive installer
-cd ~/.config/omarchy/plugins/jellespijker.fleet
-./install.sh
-```
+**Commands run locally**
+- `fleetctl get hosts --json`, `fleetctl api ...` (read-only queries).
+- `wl-copy` (clipboard), `xdg-open` (open URLs), `tailscale ip -4` (only in
+  `fleet-setup`, to suggest a default server address).
+- `fleet-setup` may run `fleetctl config set` / `fleetctl login` after you answer
+  its prompts. It never installs packages and never uses `sudo`.
+
+**Remediation commands**
+- Commands such as `sudo pacman -Syu <pkg>` or `ssh -t <host> "..."` are only
+  generated as text and shown/copied. They run only when you click Run (or
+  press `X`), and then in your own floating terminal where you type any `sudo`
+  password yourself. Package and host names are validated and shell-quoted.
+
+**Files written**
+- `<plugin dir>/config.json` (by `fleet-setup`; existing keys are kept).
+- `~/.cache/omarchy-fleet/status.json`, `~/.cache/omarchy-fleet/cisa_kev.json`.
+- `~/.config/omarchy/fleet_ignored.json` (mutes), `~/.config/omarchy/fleet_demo_active` (demo flag).
+- `~/.fleet/config` (only via `fleetctl`, when you run the setup wizard).
+
+To remove everything, see [Remove](#remove).
 
 ---
 
@@ -139,23 +185,24 @@ The plugin includes headless companion utilities:
 
 ```bash
 # Run interactive setup & bootstrap wizard (configure URL, API token, TLS, demo):
-fleet-setup
+~/.config/omarchy/plugins/jellespijker.fleet/bin/fleet-setup
 
 # Run full CISA KEV and multi-tier vulnerability triage in terminal:
-fleet-triage
+P=~/.config/omarchy/plugins/jellespijker.fleet/bin
+$P/fleet-triage
 # Run triage in synthetic demo mode:
-fleet-triage --demo
+$P/fleet-triage --demo
 
 # Mute a package or false positive:
-fleet-triage --mute ffmpeg --reason "Arch epoch mismatch"
+$P/fleet-triage --mute ffmpeg --reason "Arch epoch mismatch"
 # Or via daemon:
-~/.config/omarchy/plugins/jellespijker.fleet/bin/fleet-monitor mute ffmpeg
+$P/fleet-monitor mute ffmpeg
 
 # Unmute a package:
-fleet-triage --unmute ffmpeg
+$P/fleet-triage --unmute ffmpeg
 
 # List all muted packages & CVEs:
-fleet-triage --list-muted
+$P/fleet-triage --list-muted
 
 # Toggle persistent demo mode:
 ~/.config/omarchy/plugins/jellespijker.fleet/bin/fleet-monitor demo toggle
@@ -195,7 +242,7 @@ Omarchy plugins track the default branch (`main`) directly when installed via `o
    ```
 3. Commit and push changes to `main`:
    ```bash
-   git commit -am "chore: bump version to 1.0.0"
+   git commit -am "chore: bump version to 1.0.1"
    git push origin main
    ```
 4. Push a matching Git tag (e.g. `v1.0.0`):
@@ -204,6 +251,20 @@ Omarchy plugins track the default branch (`main`) directly when installed via `o
    git push origin v1.0.0
    ```
 5. GitHub Actions will automatically validate the package, build a release tarball with SHA256 checksums, and publish the release.
+
+---
+
+## Changelog
+
+### 1.0.1
+- Security: removed the remote pipe-to-shell installer and `install.sh`; install via
+  `omarchy plugin add` only. `fleet-setup` is a user-run wizard that never
+  downloads, installs packages or uses `sudo`; added `fleet-setup --check`.
+- Added `tests/check_no_pipe_to_shell.py` (run by CI) that fails on pipe-to-shell patterns.
+- README documents network endpoints, commands, files written and removal.
+
+### 1.0.0
+- Initial release.
 
 ---
 

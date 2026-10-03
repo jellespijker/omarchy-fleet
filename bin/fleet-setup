@@ -3,6 +3,12 @@
 fleet-setup
 Interactive Setup & Bootstrap Wizard for Omarchy Fleet Security Plugin.
 Configures FleetDM server connectivity, credentials, and verifies telemetry.
+
+Safety properties (enforced by tests/check_no_pipe_to_shell.py):
+  - never downloads anything and never executes remote content
+  - never installs packages and never uses sudo (it only prints instructions)
+  - only writes: <plugin dir>/config.json, ~/.fleet/config (through the
+    user's own `fleetctl`, after prompts), and the demo-mode flag file
 """
 
 import getpass
@@ -101,6 +107,7 @@ def check_fleetctl() -> bool:
         print(f"{RED}{BOLD}Error: 'fleetctl' CLI was not found in your PATH.{RESET}")
         print("\nFleet Security requires 'fleetctl' to query your FleetDM instance.")
         print("\nInstallation instructions:")
+        print("(This wizard never installs packages. Install fleetctl yourself, e.g.:)")
         print(f"  • {BOLD}Arch Linux / Manjaro:{RESET} yay -S fleetctl-bin")
         print(f"  • {BOLD}macOS:{RESET}                brew install fleetctl")
         print(f"  • {BOLD}Direct Download:{RESET}      https://github.com/fleetdm/fleet/releases\n")
@@ -188,16 +195,41 @@ def test_connection() -> tuple[bool, str, int, int]:
 
 def save_plugin_config(fleet_url: str):
     data = {
-        "fleet_url": fleet_url,
         "refresh_interval_sec": 60,
         "terminal_cmd": "omarchy-launch-floating-terminal-with-presentation"
     }
+    # Preserve any settings the user already made.
+    if os.path.isfile(CONFIG_PATH):
+        try:
+            with open(CONFIG_PATH, "r") as f:
+                existing = json.load(f)
+            if isinstance(existing, dict):
+                data.update(existing)
+        except Exception:
+            pass
+    data["fleet_url"] = fleet_url
     try:
         os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
         with open(CONFIG_PATH, "w") as f:
             json.dump(data, f, indent=2)
     except Exception as e:
         print(f"{YELLOW}Warning: Failed to save config.json: {e}{RESET}")
+
+
+def check_prerequisites() -> int:
+    """Read-only prerequisite check. Prints hints, installs nothing."""
+    missing = 0
+    for binary, hint in (
+        ("python3", "install python (pacman package: python)"),
+        ("wl-copy", "install wl-clipboard (omarchy pkg add wl-clipboard)"),
+        ("fleetctl", "install fleetctl (https://fleetdm.com/docs/using-fleet/fleetctl-cli); optional in demo mode"),
+    ):
+        if shutil.which(binary):
+            print(f"{GREEN}ok{RESET}      {binary}")
+        else:
+            missing += 1
+            print(f"{YELLOW}missing{RESET} {binary}: {hint}")
+    return 1 if missing else 0
 
 
 def main():
@@ -207,11 +239,16 @@ def main():
 Interactive Setup & Bootstrap Wizard for the Omarchy Fleet Security Plugin.
 
 Options:
+  --check     Only check prerequisites (python3, wl-copy, fleetctl) and exit;
+              changes nothing
   --demo      Directly enable synthetic demonstration mode and exit
   --live      Directly disable demonstration mode (use live fleet) and exit
   -h, --help  Show this help message and exit
 """)
         return
+
+    if "--check" in sys.argv:
+        sys.exit(check_prerequisites())
 
     if "--demo" in sys.argv:
         enable_demo_mode()
